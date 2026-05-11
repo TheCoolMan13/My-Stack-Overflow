@@ -1,6 +1,6 @@
 import type { QuestionSummary } from '../types';
-import TagPill from '../components/tagPill';
 import NavBar from '../components/NavBar';
+import QuestionCard from '../components/QuestionCard';
 
 const mockQuestionSummaries: QuestionSummary[] = [
     {
@@ -39,91 +39,57 @@ const filters = ['Newest', 'Active', 'Unanswered', 'Top voted'] as const;
 
 function Home() {
     return (
-        <div className="min-h-screen bg-white">
+        <div className="page">
             <NavBar />
 
-            <main className="max-w-6xl mx-auto px-6 py-10">
+            <section className="hero">
+                <div className="hero__inner">
+                    <span className="hero__eyebrow">
+                        <span className="hero__eyebrow-dot" />
+                        Powered by llama-3.1-8b
+                    </span>
+                    <h1 className="hero__title">
+                        Questions,<br />
+                        <span className="hero__title-accent">answered beautifully.</span>
+                    </h1>
+                    <p className="hero__subtitle">
+                        Ask the community. Let the AI companion help you think it through.
+                        A calmer place to get unstuck.
+                    </p>
+                    <div className="hero__actions">
+                        <button className="btn btn-primary">Ask a question</button>
+                        <button className="btn btn-ghost">Browse tags →</button>
+                    </div>
+                </div>
+            </section>
 
-                {/* Page heading */}
-                <div className="flex items-end justify-between mb-8 pb-6 border-b border-[#e8eaed]">
+            <section className="section">
+                <div className="section__head">
                     <div>
-                        <h1 className="text-[28px] font-normal text-[#202124] tracking-tight leading-tight">
-                            All Questions
-                        </h1>
-                        <p className="text-sm text-[#5f6368] mt-1">
+                        <h2 className="section__title">Latest questions</h2>
+                        <p className="section__subtitle">
                             {mockQuestionSummaries.length} questions from the community
                         </p>
                     </div>
-                    <button className="bg-[#1a73e8] text-white text-sm px-5 py-2.5 rounded-full font-medium hover:bg-[#1765cc] hover:shadow-md transition-all cursor-pointer">
-                        Ask a question
-                    </button>
+
+                    <div className="segmented">
+                        {filters.map((f, i) => (
+                            <button
+                                key={f}
+                                className={`segmented__btn ${i === 0 ? 'segmented__btn--active' : ''}`}
+                            >
+                                {f}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
-                {/* Filter tabs */}
-                <div className="flex items-center gap-1 mb-6">
-                    {filters.map((f, i) => (
-                        <button
-                            key={f}
-                            className={`text-sm px-4 py-2 rounded-full font-medium transition cursor-pointer ${
-                                i === 0
-                                    ? 'bg-[#e8f0fe] text-[#1967d2]'
-                                    : 'text-[#5f6368] hover:bg-[#f1f3f4]'
-                            }`}
-                        >
-                            {f}
-                        </button>
+                <div className="grid-cards">
+                    {mockQuestionSummaries.map((question) => (
+                        <QuestionCard key={question.id} question={question} />
                     ))}
                 </div>
-
-                {/* Question list */}
-                <div className="flex flex-col">
-                    {mockQuestionSummaries.map((question, idx) => (
-                        <article
-                            key={question.id}
-                            className={`flex gap-5 py-5 px-2 -mx-2 rounded-lg hover:bg-[#f8f9fa] transition cursor-pointer ${
-                                idx !== mockQuestionSummaries.length - 1 ? 'border-b border-[#e8eaed]' : ''
-                            }`}
-                        >
-                            {/* Stats column */}
-                            <div className="flex flex-col items-end gap-2 min-w-[72px] text-right pt-1">
-                                <div className="text-sm text-[#5f6368]">
-                                    <span className="text-[#202124] font-medium">{question.vote_count}</span> votes
-                                </div>
-                                <div className={`text-sm px-2 py-0.5 rounded ${
-                                    question.is_solved
-                                        ? 'bg-[#e6f4ea] text-[#188038] font-medium'
-                                        : 'text-[#5f6368]'
-                                }`}>
-                                    <span className={question.is_solved ? '' : 'text-[#202124] font-medium'}>{question.answer_count}</span> {question.is_solved ? '✓' : 'answers'}
-                                </div>
-                            </div>
-
-                            {/* Content column */}
-                            <div className="flex-1 min-w-0">
-                                <h2 className="text-base font-medium text-[#1a73e8] hover:underline leading-snug mb-2">
-                                    {question.title}
-                                </h2>
-
-                                <div className="flex flex-wrap gap-1.5 mb-3">
-                                    {question.question_tags.map((tagItem, index) => (
-                                        <TagPill key={index} questionTag={tagItem} />
-                                    ))}
-                                </div>
-
-                                <div className="flex items-center gap-2 text-xs text-[#5f6368]">
-                                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#1a73e8] to-[#174ea6] flex items-center justify-center text-white text-[10px] font-semibold">
-                                        {question.author?.username?.[0]?.toUpperCase() ?? '?'}
-                                    </div>
-                                    <span className="font-medium text-[#202124]">
-                                        {question.author?.username ?? 'anonymous'}
-                                    </span>
-                                    <span className="text-[#80868b]">asked on {question.created_at}</span>
-                                </div>
-                            </div>
-                        </article>
-                    ))}
-                </div>
-            </main>
+            </section>
         </div>
     );
 }
