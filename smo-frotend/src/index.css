@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+:root {
+  /* Google Material palette */
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-muted: #f8f9fa;
+  --border: #e8eaed;
+  --text: #202124;
+  --text-muted: #5f6368;
+  --text-faint: #80868b;
+  --accent: #1a73e8;
+  --accent-hover: #1765cc;
+  --accent-bg: #e8f0fe;
+  --success: #188038;
+  --success-bg: #e6f4ea;
+}
+
+html, body, #root {
+  margin: 0;
+  min-height: 100vh;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Google Sans Text', 'Google Sans', Roboto, system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0.01em;
+}
+
+button {
+  font-family: inherit;
+}
