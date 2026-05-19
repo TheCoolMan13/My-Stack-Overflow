@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { QuestionSummary } from '../types';
 import NavBar from '../components/NavBar';
 import QuestionCard from '../components/QuestionCard';
@@ -57,7 +58,7 @@ function Home() {
                         A calmer place to get unstuck.
                     </p>
                     <div className="hero__actions">
-                        <button className="btn btn-primary">Ask a question</button>
+                        <Link to="/ask" className="btn btn-primary">Ask a question</Link>
                         <button className="btn btn-ghost">Browse tags →</button>
                     </div>
                 </div>
