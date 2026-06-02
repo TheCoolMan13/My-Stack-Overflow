@@ -2,8 +2,10 @@ import {
     createContext,
     useContext,
     useState,
+    useEffect,
     type ReactNode,
 } from 'react';
+import * as api from '../lib/api';
 
 /* ─────────────────────────────────────────────
    Types
@@ -13,68 +15,108 @@ export interface AuthUser {
     username: string;
     email: string;
     avatarInitial: string;
-    reputation: number;
-    joinedAt: string;
 }
 
 interface AuthContextValue {
     user: AuthUser | null;
     isAuthenticated: boolean;
-    signIn: (email: string, password: string) => Promise<void>;
-    signUp: (username: string, email: string, password: string) => Promise<void>;
+    isLoading: boolean;
+    signIn: (email: string, password: string) => Promise<{ error?: string }>;
+    signUp: (username: string, email: string, password: string) => Promise<{ error?: string }>;
     signOut: () => void;
 }
-
-/* ─────────────────────────────────────────────
-   Mock user — pretend this came back from the API
-   ───────────────────────────────────────────── */
-const MOCK_USER: AuthUser = {
-    id: 'u_titus',
-    username: 'Titus_AC_LABS',
-    email: 'titus@smoverflow.dev',
-    avatarInitial: 'T',
-    reputation: 1284,
-    joinedAt: '2026-01-14',
-};
 
 /* ─────────────────────────────────────────────
    Context
    ───────────────────────────────────────────── */
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function buildUser(id: string, email: string, username: string | null): AuthUser {
+    const name = username || email.split('@')[0];
+    return {
+        id,
+        email,
+        username: name,
+        avatarInitial: name[0]?.toUpperCase() ?? 'U',
+    };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-    // Start logged in with the mock user. Change to `null` to test the logged-out state.
-    const [user, setUser] = useState<AuthUser | null>(MOCK_USER);
+    const [user, setUser] = useState<AuthUser | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
-    const signIn: AuthContextValue['signIn'] = async (_email, _password) => {
-        // Pretend we hit an API
-        await new Promise((r) => setTimeout(r, 400));
-        setUser(MOCK_USER);
-    };
+    // On mount, restore session by validating the stored access token
+    // against the real /auth/me endpoint. This ensures we never display
+    // stale or fabricated user data.
+    useEffect(() => {
+        const token = api.getAccessToken();
+        if (!token) {
+            setIsLoading(false);
+            return;
+        }
 
-    const signUp: AuthContextValue['signUp'] = async (username, email, _password) => {
-        await new Promise((r) => setTimeout(r, 400));
-        setUser({
-            ...MOCK_USER,
-            id: `u_${username.toLowerCase()}`,
-            username,
-            email,
-            avatarInitial: username[0]?.toUpperCase() ?? '?',
-            reputation: 1,
+        api.getMe().then((result) => {
+            if (result.data) {
+                setUser(buildUser(result.data.id, result.data.email, result.data.username));
+            } else {
+                // Token is invalid or expired and refresh failed — clear it
+                api.clearTokens();
+            }
+            setIsLoading(false);
         });
+    }, []);
+
+    const signIn: AuthContextValue['signIn'] = async (email, password) => {
+        const result = await api.login({ email, password });
+        if (result.error || !result.data) {
+            return { error: result.error || 'Login failed' };
+        }
+
+        const { accessToken, refreshToken, user: authUser } = result.data;
+        api.setTokens(accessToken, refreshToken);
+
+        // Fetch the profile to get the username
+        const meResult = await api.getMe();
+        const username = meResult.data?.username ?? null;
+        setUser(buildUser(authUser.id, authUser.email, username));
+        return {};
     };
 
-    const signOut = () => setUser(null);
+    const signUp: AuthContextValue['signUp'] = async (username, email, password) => {
+        const result = await api.register({ username, email, password });
+        if (result.error || !result.data) {
+            return { error: result.error || 'Registration failed' };
+        }
 
-    const value: AuthContextValue = {
-        user,
-        isAuthenticated: user !== null,
-        signIn,
-        signUp,
-        signOut,
+        if (result.data.confirmation_required) {
+            return { error: result.data.message || 'Please check your email to confirm your account.' };
+        }
+
+        const { accessToken, refreshToken, user: authUser } = result.data;
+        api.setTokens(accessToken, refreshToken);
+        setUser(buildUser(authUser.id, authUser.email, username));
+        return {};
     };
 
-    return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+    const signOut = () => {
+        api.clearTokens();
+        setUser(null);
+    };
+
+    return (
+        <AuthContext.Provider
+            value={{
+                user,
+                isAuthenticated: user !== null,
+                isLoading,
+                signIn,
+                signUp,
+                signOut,
+            }}
+        >
+            {children}
+        </AuthContext.Provider>
+    );
 }
 
 /* ─────────────────────────────────────────────

@@ -1,44 +1,60 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { QuestionSummary } from '../types';
 import NavBar from '../components/NavBar';
 import QuestionCard from '../components/QuestionCard';
-
-const mockQuestionSummaries: QuestionSummary[] = [
-    {
-        id: 'q1',
-        title: 'How do I center a div in CSS?',
-        is_solved: true,
-        vote_count: 12,
-        created_at: '2026-05-11',
-        author: { id: 'u1', username: 'titus' },
-        question_tags: [{ tag: { name: 'css' } }, { tag: { name: 'html' } }],
-        answer_count: 3,
-    },
-    {
-        id: 'q2',
-        title: 'Difference between let, const and var in JavaScript',
-        is_solved: false,
-        vote_count: 7,
-        created_at: '2026-05-10',
-        author: { id: 'u2', username: 'alex_dev' },
-        question_tags: [{ tag: { name: 'javascript' } }, { tag: { name: 'typescript' } }],
-        answer_count: 1,
-    },
-    {
-        id: 'q3',
-        title: 'How to connect Supabase with React?',
-        is_solved: true,
-        vote_count: 20,
-        created_at: '2026-05-09',
-        author: { id: 'u3', username: 'rob' },
-        question_tags: [{ tag: { name: 'react' } }, { tag: { name: 'supabase' } }],
-        answer_count: 5,
-    },
-];
+import type { QuestionSummary } from '../types';
+import * as api from '../lib/api';
 
 const filters = ['Newest', 'Active', 'Unanswered', 'Top voted'] as const;
+type Filter = (typeof filters)[number];
 
 function Home() {
+    const [questions, setQuestions] = useState<QuestionSummary[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [activeFilter, setActiveFilter] = useState<Filter>('Newest');
+
+    useEffect(() => {
+        api.getQuestions().then((result) => {
+            if (result.error || !result.data) {
+                setError(result.error ?? 'Failed to load questions');
+            } else {
+                // Map the API response to the QuestionSummary shape the UI uses
+                setQuestions(
+                    result.data.map((q) => ({
+                        id: q.id,
+                        title: q.title,
+                        is_solved: q.is_solved,
+                        vote_count: q.vote_count,
+                        created_at: q.created_at,
+                        author: q.author,
+                        question_tags: q.question_tags,
+                        // The backend returns answers as [{ count: number }] for the list view
+                        answer_count:
+                            Array.isArray(q.answers) && q.answers.length > 0
+                                ? (q.answers[0] as { count: number }).count
+                                : 0,
+                    })),
+                );
+            }
+            setLoading(false);
+        });
+    }, []);
+
+    // Client-side sort so we don't need extra API calls for filter changes
+    const sorted = [...questions].sort((a, b) => {
+        if (activeFilter === 'Top voted') return b.vote_count - a.vote_count;
+        if (activeFilter === 'Unanswered') {
+            // Unanswered first, then newest
+            if (a.answer_count !== b.answer_count) return a.answer_count - b.answer_count;
+        }
+        // Default: newest first
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
+    const displayed =
+        activeFilter === 'Unanswered' ? sorted.filter((q) => q.answer_count === 0) : sorted;
+
     return (
         <div className="page">
             <NavBar />
@@ -47,14 +63,14 @@ function Home() {
                 <div className="hero__inner">
                     <span className="hero__eyebrow">
                         <span className="hero__eyebrow-dot" />
-                        Powered by llama-3.1-8b
+                        Community Q&amp;A
                     </span>
                     <h1 className="hero__title">
                         Questions,<br />
                         <span className="hero__title-accent">answered beautifully.</span>
                     </h1>
                     <p className="hero__subtitle">
-                        Ask the community. Let the AI companion help you think it through.
+                        Ask the community. Get clear answers from people who've been there.
                         A calmer place to get unstuck.
                     </p>
                     <div className="hero__actions">
@@ -69,15 +85,16 @@ function Home() {
                     <div>
                         <h2 className="section__title">Latest questions</h2>
                         <p className="section__subtitle">
-                            {mockQuestionSummaries.length} questions from the community
+                            {loading ? 'Loading…' : `${questions.length} questions from the community`}
                         </p>
                     </div>
 
                     <div className="segmented">
-                        {filters.map((f, i) => (
+                        {filters.map((f) => (
                             <button
                                 key={f}
-                                className={`segmented__btn ${i === 0 ? 'segmented__btn--active' : ''}`}
+                                className={`segmented__btn ${f === activeFilter ? 'segmented__btn--active' : ''}`}
+                                onClick={() => setActiveFilter(f)}
                             >
                                 {f}
                             </button>
@@ -85,8 +102,26 @@ function Home() {
                     </div>
                 </div>
 
+                {error && (
+                    <p style={{ color: 'var(--color-error, #f87171)', textAlign: 'center', padding: '2rem 0' }}>
+                        {error}
+                    </p>
+                )}
+
+                {loading && !error && (
+                    <p style={{ textAlign: 'center', padding: '2rem 0', opacity: 0.6 }}>
+                        Loading questions…
+                    </p>
+                )}
+
+                {!loading && !error && displayed.length === 0 && (
+                    <p style={{ textAlign: 'center', padding: '2rem 0', opacity: 0.6 }}>
+                        {activeFilter === 'Unanswered' ? 'No unanswered questions right now.' : 'No questions yet. Be the first to ask one!'}
+                    </p>
+                )}
+
                 <div className="grid-cards">
-                    {mockQuestionSummaries.map((question) => (
+                    {displayed.map((question) => (
                         <QuestionCard key={question.id} question={question} />
                     ))}
                 </div>

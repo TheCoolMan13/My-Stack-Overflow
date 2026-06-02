@@ -1,6 +1,30 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useAuth } from '../hooks/useAuth';
 
 function SignIn() {
+    const navigate = useNavigate();
+    const { signIn } = useAuth();
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    async function handleSubmit(e: React.FormEvent) {
+        e.preventDefault();
+        setError('');
+        setIsLoading(true);
+
+        const result = await signIn(email, password);
+        setIsLoading(false);
+
+        if (result.error) {
+            setError(result.error);
+        } else {
+            navigate('/');
+        }
+    }
+
     return (
         <div className="auth">
             <div className="auth__wrap">
@@ -14,18 +38,38 @@ function SignIn() {
                     <h1 className="auth__title">Welcome back</h1>
                     <p className="auth__subtitle">Sign in to continue to your account</p>
 
-                    <form className="auth__form" onSubmit={(e) => e.preventDefault()}>
+                    {error && (
+                        <div style={{ 
+                            padding: '10px 14px', 
+                            borderRadius: '8px', 
+                            background: 'rgba(215, 0, 21, 0.1)', 
+                            border: '1px solid rgba(215, 0, 21, 0.3)',
+                            color: '#d70015',
+                            fontSize: '13px',
+                            marginBottom: '16px'
+                        }}>
+                            {error}
+                        </div>
+                    )}
+
+                    <form className="auth__form" onSubmit={handleSubmit}>
                         <input
                             className="input"
                             type="email"
                             autoComplete="email"
                             placeholder="Email address"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
                         />
                         <input
                             className="input"
                             type="password"
                             autoComplete="current-password"
                             placeholder="Password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
                         />
 
                         <div className="auth__row">
@@ -36,8 +80,8 @@ function SignIn() {
                             <a href="#" className="auth__link">Forgot password?</a>
                         </div>
 
-                        <button type="submit" className="auth__submit">
-                            Sign in
+                        <button type="submit" className="auth__submit" disabled={isLoading}>
+                            {isLoading ? 'Signing in...' : 'Sign in'}
                         </button>
                     </form>
 

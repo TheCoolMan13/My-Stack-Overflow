@@ -35,7 +35,6 @@ export default function NavBar() {
                                 <div className="user-menu__avatar">{user.avatarInitial}</div>
                                 <div className="user-menu__info">
                                     <span className="user-menu__name">{user.username}</span>
-                                    <span className="user-menu__rep">{user.reputation.toLocaleString()} rep</span>
                                 </div>
                                 <button
                                     className="user-menu__signout"

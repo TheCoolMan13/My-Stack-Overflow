@@ -2,6 +2,7 @@ import { useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import { useAuth } from '../hooks/useAuth';
+import * as api from '../lib/api';
 
 const POPULAR_TAGS = [
     'javascript', 'typescript', 'react', 'css', 'html',
@@ -18,12 +19,14 @@ function AskQuestion() {
     const [description, setDescription] = useState('');
     const [tags, setTags] = useState<string[]>([]);
     const [tagDraft, setTagDraft] = useState('');
-    const [allowAI, setAllowAI] = useState(true);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState('');
 
     const canSubmit =
-        title.trim().length >= 10 &&
-        description.trim().length >= 20 &&
-        tags.length > 0;
+        title.trim().length >= 5 &&
+        description.trim().length >= 10 &&
+        tags.length > 0 &&
+        !isSubmitting;
 
     function addTag(raw: string) {
         const t = raw.trim().toLowerCase().replace(/\s+/g, '-');
@@ -47,11 +50,28 @@ function AskQuestion() {
         }
     }
 
-    function onSubmit(e: React.FormEvent) {
+    async function onSubmit(e: React.FormEvent) {
         e.preventDefault();
-        // Mock — would POST to API. For now, jump back to home.
-        console.log('New question:', { title, description, tags, allowAI });
-        navigate('/');
+        if (!canSubmit) return;
+
+        setIsSubmitting(true);
+        setSubmitError('');
+
+        const result = await api.createQuestion({
+            title: title.trim(),
+            description: description.trim(),
+            tags,
+        });
+
+        setIsSubmitting(false);
+
+        if (result.error || !result.data) {
+            setSubmitError(result.error ?? 'Failed to post question. Please try again.');
+            return;
+        }
+
+        // Navigate to the new question's detail page
+        navigate(`/questions/${result.data.id}`);
     }
 
     return (
@@ -116,10 +136,6 @@ function AskQuestion() {
                                     <button type="button" className="editor__tool" title="Code">{'</>'}</button>
                                     <button type="button" className="editor__tool" title="Link">🔗</button>
                                     <button type="button" className="editor__tool" title="List">≣</button>
-                                    <span className="editor__spacer" />
-                                    <button type="button" className="editor__tool editor__tool--accent" title="Ask AI to refine">
-                                        ✨ Refine with AI
-                                    </button>
                                 </div>
                                 <textarea
                                     id="description"
@@ -183,26 +199,28 @@ function AskQuestion() {
                             </div>
                         </div>
 
-                        {/* AI toggle */}
-                        <div className="field">
-                            <label className="ai-toggle">
-                                <div className="ai-toggle__icon">✨</div>
-                                <div className="ai-toggle__copy">
-                                    <span className="ai-toggle__title">Allow AI Companion to answer</span>
-                                    <span className="ai-toggle__desc">
-                                        Get an instant draft answer from llama-3.1-8b alongside community responses.
-                                    </span>
-                                </div>
-                                <span className="switch">
-                                    <input
-                                        type="checkbox"
-                                        checked={allowAI}
-                                        onChange={(e) => setAllowAI(e.target.checked)}
-                                    />
-                                    <span className="switch__track" />
-                                </span>
-                            </label>
-                        </div>
+                        {/* Submit requirements checklist */}
+                        {!canSubmit && !isSubmitting && (
+                            <ul style={{ fontSize: '13px', opacity: 0.65, paddingLeft: '1.2rem', margin: 0 }}>
+                                {title.trim().length < 5 && <li>Title needs at least 5 characters</li>}
+                                {description.trim().length < 10 && <li>Description needs at least 10 characters</li>}
+                                {tags.length === 0 && <li>Add at least one tag</li>}
+                            </ul>
+                        )}
+
+                        {/* Error message */}
+                        {submitError && (
+                            <div style={{
+                                padding: '10px 14px',
+                                borderRadius: '8px',
+                                background: 'rgba(215, 0, 21, 0.1)',
+                                border: '1px solid rgba(215, 0, 21, 0.3)',
+                                color: '#d70015',
+                                fontSize: '13px',
+                            }}>
+                                {submitError}
+                            </div>
+                        )}
 
                         {/* Actions */}
                         <div className="ask__actions">
@@ -212,7 +230,7 @@ function AskQuestion() {
                                 className="btn btn-primary"
                                 disabled={!canSubmit}
                             >
-                                Post your question
+                                {isSubmitting ? 'Posting…' : 'Post your question'}
                             </button>
                         </div>
                     </form>
@@ -237,9 +255,6 @@ function AskQuestion() {
                                     <div className="author__avatar">{user.avatarInitial}</div>
                                     <div className="author__info">
                                         <span className="author__name">{user.username}</span>
-                                        <span className="author__role">
-                                            {user.reputation.toLocaleString()} rep
-                                        </span>
                                     </div>
                                 </div>
                             </div>

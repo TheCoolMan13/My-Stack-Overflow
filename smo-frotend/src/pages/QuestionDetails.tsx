@@ -1,89 +1,225 @@
-import { Link, useParams } from 'react-router-dom';
-import type { Question } from '../types';
+import { useEffect, useState, useRef } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import TagPill from '../components/tagPill';
+import VoteButton from '../components/VoteButton';
+import { useAuth } from '../hooks/useAuth';
+import * as api from '../lib/api';
+import type { QuestionDetail, AnswerItem } from '../lib/api';
 
-// Mock — in the real app this would come from an API call using the :id param
-const mockQuestion: Question = {
-    id: 'q1',
-    title: 'How do I center a div in CSS?',
-    description:
-        "I've been struggling with centering a div both horizontally and vertically for a while now. I've tried using `margin: 0 auto` for horizontal centering, but I can't figure out the vertical part.\n\nWhat's the modern, preferred way to do this in 2026? I've heard Flexbox and Grid are good options but I'm not sure which to choose.\n\nHere's what I've tried so far:\n\n```css\n.container {\n  margin: 0 auto;\n  text-align: center;\n}\n```\n\nBut this doesn't vertically center anything. Any help would be appreciated!",
-    author_id: 'u1',
-    is_solved: true,
-    allow_ai_companion: true,
-    vote_count: 12,
-    created_at: '2026-05-11',
-    author: { id: 'u1', username: 'titus' },
-    question_tags: [{ tag: { name: 'css' } }, { tag: { name: 'html' } }, { tag: { name: 'flexbox' } }],
-    answers: [
-        {
-            id: 'a1',
-            body:
-                "The cleanest modern way is to use Flexbox. Three lines on the parent and you're done:\n\n```css\n.parent {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n```\n\nThis centers the child both horizontally and vertically regardless of its size. Works in every modern browser.",
-            question_id: 'q1',
-            author_id: 'u2',
-            vote_count: 24,
-            is_accepted: true,
-            is_ai_generated: false,
-            created_at: '2026-05-11',
-            author: { id: 'u2', username: 'alex_dev' },
-            comments: [
-                {
-                    id: 'c1',
-                    body: 'This is the way. Flexbox all the way in 2026.',
-                    target_id: 'a1',
-                    target_type: 'answer',
-                    created_at: '2026-05-11',
-                    author: { id: 'u3', username: 'rob' },
-                },
-            ],
-        },
-        {
-            id: 'a2',
-            body:
-                'You can also use CSS Grid if you prefer:\n\n```css\n.parent {\n  display: grid;\n  place-items: center;\n}\n```\n\n`place-items: center` is a shorthand for `align-items: center` + `justify-items: center`. Even more concise than Flexbox for pure centering.',
-            question_id: 'q1',
-            author_id: 'u3',
-            vote_count: 8,
-            is_accepted: false,
-            is_ai_generated: false,
-            created_at: '2026-05-11',
-            author: { id: 'u3', username: 'rob' },
-            comments: [],
-        },
-        {
-            id: 'a3',
-            body:
-                "Both Flexbox and CSS Grid will work well here. A quick rule of thumb:\n\n- Use **Flexbox** when you're centering one item or laying out content in one dimension\n- Use **Grid** when you're working with a two-dimensional layout or want the `place-items: center` shorthand\n\nFor your specific case, either approach is idiomatic.",
-            question_id: 'q1',
-            author_id: 'ai',
-            vote_count: 3,
-            is_accepted: false,
-            is_ai_generated: true,
-            created_at: '2026-05-11',
-            author: { id: 'ai', username: 'AI Companion' },
-            comments: [],
-        },
-    ],
-    comments: [
-        {
-            id: 'c2',
-            body: "Have you tried Flexbox? It's the easiest solution.",
-            target_id: 'q1',
-            target_type: 'question',
-            created_at: '2026-05-11',
-            author: { id: 'u2', username: 'alex_dev' },
-        },
-    ],
-};
-
+/* ─────────────────────────────────────────────
+   Main page component
+   ───────────────────────────────────────────── */
 function QuestionDetails() {
-    useParams<{ id: string }>(); // stub — would fetch by id in the real app
-    const question = mockQuestion;
+    const { id } = useParams<{ id: string }>();
+    const navigate = useNavigate();
+    const { user, isAuthenticated } = useAuth();
+
+    const [question, setQuestion] = useState<QuestionDetail | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    // Answer submission state
+    const [answerBody, setAnswerBody] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+    const [answerError, setAnswerError] = useState<string | null>(null);
+
+    // Track the user's own votes keyed by item id so VoteButton can show active state
+    const [myVotes, setMyVotes] = useState<Record<string, 1 | -1>>({});
+
+    useEffect(() => {
+        if (!id) return;
+        setLoading(true);
+        api.getQuestion(id).then((result) => {
+            if (result.error || !result.data) {
+                setError(result.error ?? 'Question not found');
+            } else {
+                setQuestion(result.data);
+            }
+            setLoading(false);
+        });
+    }, [id]);
+
+    /* ── Vote on question ── */
+    async function handleQuestionVote(value: 1 | -1) {
+        if (!isAuthenticated) {
+            navigate('/signin');
+            return;
+        }
+        if (!question) return;
+
+        // Optimistic update: apply the vote delta immediately
+        const prevCount = question.vote_count;
+        const prevVote = myVotes[question.id] ?? 0;
+
+        // Compute the optimistic delta
+        let delta: number;
+        if (prevVote === 0) delta = value;
+        else if (prevVote === value) delta = -value; // toggle off
+        else delta = 2 * value;                       // switch direction
+
+        const optimisticCount = prevCount + delta;
+
+        setQuestion((q) => q ? { ...q, vote_count: optimisticCount } : q);
+        setMyVotes((v) => ({
+            ...v,
+            [question.id]: prevVote === value ? 0 : value,
+        } as Record<string, 1 | -1>));
+
+        const result = await api.voteQuestion(question.id, value);
+        if (result.error || result.data === undefined) {
+            // Revert on failure
+            setQuestion((q) => q ? { ...q, vote_count: prevCount } : q);
+            setMyVotes((v) => ({ ...v, [question.id]: prevVote as 1 | -1 }));
+        } else {
+            // Sync with server's authoritative count
+            setQuestion((q) => q ? { ...q, vote_count: result.data!.vote_count } : q);
+        }
+    }
+
+    /* ── Vote on answer ── */
+    async function handleAnswerVote(answerId: string, value: 1 | -1) {
+        if (!isAuthenticated) {
+            navigate('/signin');
+            return;
+        }
+        if (!question) return;
+
+        const answer = question.answers.find((a) => a.id === answerId);
+        if (!answer) return;
+
+        const prevCount = answer.vote_count;
+        const prevVote = myVotes[answerId] ?? 0;
+
+        let delta: number;
+        if (prevVote === 0) delta = value;
+        else if (prevVote === value) delta = -value;
+        else delta = 2 * value;
+
+        // Optimistic update
+        setQuestion((q) => {
+            if (!q) return q;
+            return {
+                ...q,
+                answers: q.answers.map((a) =>
+                    a.id === answerId ? { ...a, vote_count: prevCount + delta } : a,
+                ),
+            };
+        });
+        setMyVotes((v) => ({
+            ...v,
+            [answerId]: prevVote === value ? 0 : value,
+        } as Record<string, 1 | -1>));
+
+        const result = await api.voteAnswer(answerId, value);
+        if (result.error || result.data === undefined) {
+            // Revert
+            setQuestion((q) => {
+                if (!q) return q;
+                return {
+                    ...q,
+                    answers: q.answers.map((a) =>
+                        a.id === answerId ? { ...a, vote_count: prevCount } : a,
+                    ),
+                };
+            });
+            setMyVotes((v) => ({ ...v, [answerId]: prevVote as 1 | -1 }));
+        } else {
+            setQuestion((q) => {
+                if (!q) return q;
+                return {
+                    ...q,
+                    answers: q.answers.map((a) =>
+                        a.id === answerId ? { ...a, vote_count: result.data!.vote_count } : a,
+                    ),
+                };
+            });
+        }
+    }
+
+    /* ── Accept answer ── */
+    async function handleAccept(answerId: string) {
+        if (!isAuthenticated || !question) return;
+        if (question.author_id !== user?.id) return;
+
+        const result = await api.acceptAnswer(answerId);
+        if (result.error || !result.data) return;
+
+        // Update local state: un-accept all, then apply the server response
+        setQuestion((q) => {
+            if (!q) return q;
+            const updatedAnswer = result.data!;
+            return {
+                ...q,
+                is_solved: updatedAnswer.is_accepted,
+                answers: q.answers.map((a) =>
+                    a.id === answerId
+                        ? { ...a, is_accepted: updatedAnswer.is_accepted }
+                        : { ...a, is_accepted: false },
+                ),
+            };
+        });
+    }
+
+    /* ── Submit new answer ── */
+    async function handleSubmitAnswer(e: React.FormEvent) {
+        e.preventDefault();
+        if (!isAuthenticated) {
+            navigate('/signin');
+            return;
+        }
+        if (!answerBody.trim() || !id) return;
+
+        setSubmitting(true);
+        setAnswerError(null);
+
+        const result = await api.createAnswer(id, answerBody.trim());
+        if (result.error || !result.data) {
+            setAnswerError(result.error ?? 'Failed to post answer');
+        } else {
+            // Append the new answer to the list
+            setQuestion((q) =>
+                q ? { ...q, answers: [...q.answers, result.data!] } : q,
+            );
+            setAnswerBody('');
+        }
+        setSubmitting(false);
+    }
+
+    /* ── Render ── */
+    if (loading) {
+        return (
+            <div className="page">
+                <NavBar />
+                <main className="detail">
+                    <p style={{ textAlign: 'center', padding: '4rem 0', opacity: 0.6 }}>
+                        Loading…
+                    </p>
+                </main>
+            </div>
+        );
+    }
+
+    if (error || !question) {
+        return (
+            <div className="page">
+                <NavBar />
+                <main className="detail">
+                    <Link to="/" className="detail__back">← All questions</Link>
+                    <p style={{ textAlign: 'center', padding: '4rem 0', color: 'var(--color-error, #f87171)' }}>
+                        {error ?? 'Question not found.'}
+                    </p>
+                </main>
+            </div>
+        );
+    }
 
     const acceptedAnswer = question.answers.find((a) => a.is_accepted);
-    const otherAnswers = question.answers.filter((a) => !a.is_accepted);
+    const otherAnswers = question.answers
+        .filter((a) => !a.is_accepted)
+        .sort((a, b) => b.vote_count - a.vote_count);
+
+    const isQuestionAuthor = isAuthenticated && user?.id === question.author_id;
 
     return (
         <div className="page">
@@ -104,11 +240,11 @@ function QuestionDetails() {
                     <h1 className="detail__title">{question.title}</h1>
                     <div className="detail__meta">
                         <span>
-                            Asked <strong>{question.created_at}</strong>
+                            Asked <strong>{new Date(question.created_at).toLocaleDateString()}</strong>
                         </span>
                         <span className="detail__meta-dot">·</span>
                         <span>
-                            Viewed <strong>1,284 times</strong>
+                            <strong>{question.answers.length}</strong> {question.answers.length === 1 ? 'answer' : 'answers'}
                         </span>
                         {question.is_solved && (
                             <>
@@ -124,9 +260,13 @@ function QuestionDetails() {
                     </div>
                 </header>
 
-                {/* Body: vote sidebar + content */}
+                {/* Question body */}
                 <section className="post">
-                    <VoteColumn count={question.vote_count} />
+                    <VoteButton
+                        count={question.vote_count}
+                        userVote={myVotes[question.id] ?? 0}
+                        onVote={(v) => handleQuestionVote(v)}
+                    />
 
                     <div className="post__body">
                         <Prose body={question.description} />
@@ -140,95 +280,99 @@ function QuestionDetails() {
                         <div className="post__foot">
                             <div className="post__actions">
                                 <button className="link-btn">Share</button>
-                                <button className="link-btn">Edit</button>
-                                <button className="link-btn">Follow</button>
                             </div>
                             <AuthorCard
                                 variant="asked"
                                 username={question.author?.username ?? 'anonymous'}
-                                date={question.created_at}
+                                date={new Date(question.created_at).toLocaleDateString()}
                             />
                         </div>
-
-                        {question.comments.length > 0 && (
-                            <CommentList comments={question.comments} />
-                        )}
                     </div>
                 </section>
 
-                {/* Answers header */}
-                <div className="answers__head">
-                    <h2 className="answers__title">
-                        {question.answers.length} Answers
-                    </h2>
-                    <div className="segmented">
-                        <button className="segmented__btn segmented__btn--active">Highest score</button>
-                        <button className="segmented__btn">Newest</button>
-                        <button className="segmented__btn">Oldest</button>
-                    </div>
-                </div>
+                {/* Answers section */}
+                {question.answers.length > 0 && (
+                    <>
+                        <div className="answers__head">
+                            <h2 className="answers__title">
+                                {question.answers.length} {question.answers.length === 1 ? 'Answer' : 'Answers'}
+                            </h2>
+                        </div>
 
-                {/* Accepted answer first */}
-                {acceptedAnswer && <AnswerBlock answer={acceptedAnswer} />}
-                {otherAnswers.map((a) => (
-                    <AnswerBlock key={a.id} answer={a} />
-                ))}
+                        {/* Accepted answer always comes first */}
+                        {acceptedAnswer && (
+                            <AnswerBlock
+                                answer={acceptedAnswer}
+                                userVote={myVotes[acceptedAnswer.id] ?? 0}
+                                canAccept={isQuestionAuthor}
+                                onVote={(v) => handleAnswerVote(acceptedAnswer.id, v)}
+                                onAccept={() => handleAccept(acceptedAnswer.id)}
+                            />
+                        )}
+                        {otherAnswers.map((a) => (
+                            <AnswerBlock
+                                key={a.id}
+                                answer={a}
+                                userVote={myVotes[a.id] ?? 0}
+                                canAccept={isQuestionAuthor}
+                                onVote={(v) => handleAnswerVote(a.id, v)}
+                                onAccept={() => handleAccept(a.id)}
+                            />
+                        ))}
+                    </>
+                )}
 
-                {/* Your answer */}
+                {/* Post an answer */}
                 <section className="your-answer">
                     <h3 className="your-answer__title">Your Answer</h3>
-                    <textarea
-                        className="your-answer__editor"
-                        placeholder="Write your answer here... Markdown is supported."
-                    />
-                    <div className="your-answer__foot">
-                        <button className="btn btn-ghost">
-                            ✨ Ask AI Companion
-                        </button>
-                        <button className="btn btn-primary">Post your answer</button>
-                    </div>
+                    {!isAuthenticated ? (
+                        <p style={{ opacity: 0.7, marginBottom: '1rem' }}>
+                            <Link to="/signin" style={{ color: 'var(--color-primary, #6366f1)' }}>Sign in</Link> to post an answer.
+                        </p>
+                    ) : (
+                        <form onSubmit={handleSubmitAnswer}>
+                            <textarea
+                                className="your-answer__editor"
+                                placeholder="Write your answer here… Markdown is supported."
+                                value={answerBody}
+                                onChange={(e) => setAnswerBody(e.target.value)}
+                                disabled={submitting}
+                                rows={6}
+                            />
+                            {answerError && (
+                                <p style={{ color: 'var(--color-error, #f87171)', marginTop: '0.5rem' }}>
+                                    {answerError}
+                                </p>
+                            )}
+                            <div className="your-answer__foot">
+                                <button
+                                    type="submit"
+                                    className="btn btn-primary"
+                                    disabled={submitting || !answerBody.trim()}
+                                >
+                                    {submitting ? 'Posting…' : 'Post your answer'}
+                                </button>
+                            </div>
+                        </form>
+                    )}
                 </section>
             </main>
         </div>
     );
 }
 
-/* ──────────────── Sub-components ──────────────── */
-
-function VoteColumn({ count, accepted = false }: { count: number; accepted?: boolean }) {
-    return (
-        <aside className="vote">
-            <button className="vote__btn" aria-label="Upvote">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 4 4 14h5v6h6v-6h5z" strokeLinejoin="round" />
-                </svg>
-            </button>
-            <span className="vote__count">{count}</span>
-            <button className="vote__btn" aria-label="Downvote">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 20 4 10h5V4h6v6h5z" strokeLinejoin="round" />
-                </svg>
-            </button>
-            {accepted && (
-                <div className="vote__accepted" title="Accepted answer">
-                    <svg width="22" height="22" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 0 1 0 1.414l-8 8a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 1.414-1.414L8 12.586l7.293-7.293a1 1 0 0 1 1.414 0z" clipRule="evenodd" />
-                    </svg>
-                </div>
-            )}
-        </aside>
-    );
-}
+/* ─────────────────────────────────────────────
+   Sub-components
+   ───────────────────────────────────────────── */
 
 function Prose({ body }: { body: string }) {
-    // Minimal renderer: split on ``` blocks and render as <pre>, paragraphs otherwise
     const parts = body.split(/```/g);
     return (
         <div className="prose">
             {parts.map((chunk, i) => {
                 if (i % 2 === 1) {
-                    const firstLineBreak = chunk.indexOf('\n');
-                    const code = firstLineBreak === -1 ? chunk : chunk.slice(firstLineBreak + 1);
+                    const firstBreak = chunk.indexOf('\n');
+                    const code = firstBreak === -1 ? chunk : chunk.slice(firstBreak + 1);
                     return (
                         <pre key={i} className="prose__code">
                             <code>{code.trimEnd()}</code>
@@ -248,47 +392,54 @@ function AuthorCard({
     username,
     date,
     variant,
-    aiGenerated,
 }: {
     username: string;
     date: string;
     variant: 'asked' | 'answered';
-    aiGenerated?: boolean;
 }) {
     return (
-        <div className={`authorcard ${aiGenerated ? 'authorcard--ai' : ''}`}>
+        <div className="authorcard">
             <div className="authorcard__label">{variant === 'asked' ? 'asked' : 'answered'} on {date}</div>
             <div className="authorcard__body">
-                <div className="author__avatar">
-                    {aiGenerated ? '✨' : username[0]?.toUpperCase() ?? '?'}
-                </div>
+                <div className="author__avatar">{username[0]?.toUpperCase() ?? '?'}</div>
                 <div className="author__info">
                     <span className="author__name">{username}</span>
-                    <span className="author__role">
-                        {aiGenerated ? 'AI Companion' : '1,284 rep'}
-                    </span>
                 </div>
             </div>
         </div>
     );
 }
 
-function AnswerBlock({ answer }: { answer: Question['answers'][number] }) {
+function AnswerBlock({
+    answer,
+    userVote,
+    canAccept,
+    onVote,
+    onAccept,
+}: {
+    answer: AnswerItem;
+    userVote: 1 | -1 | 0;
+    canAccept: boolean;
+    onVote: (v: 1 | -1) => Promise<void>;
+    onAccept: () => void;
+}) {
     return (
         <section className={`post ${answer.is_accepted ? 'post--accepted' : ''}`}>
-            <VoteColumn count={answer.vote_count} accepted={answer.is_accepted} />
+            <VoteButton
+                count={answer.vote_count}
+                userVote={userVote}
+                onVote={onVote}
+                accepted={answer.is_accepted}
+            />
 
             <div className="post__body">
                 {answer.is_accepted && (
                     <div className="post__badge post__badge--accepted">
-                        <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                        <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 0 1 0 1.414l-8 8a1 1 0 0 1-1.414 0l-4-4a1 1 0 0 1 1.414-1.414L8 12.586l7.293-7.293a1 1 0 0 1 1.414 0z" clipRule="evenodd" />
                         </svg>
                         Accepted answer
                     </div>
-                )}
-                {answer.is_ai_generated && (
-                    <div className="post__badge post__badge--ai">✨ AI-generated</div>
                 )}
 
                 <Prose body={answer.body} />
@@ -296,38 +447,24 @@ function AnswerBlock({ answer }: { answer: Question['answers'][number] }) {
                 <div className="post__foot">
                     <div className="post__actions">
                         <button className="link-btn">Share</button>
-                        <button className="link-btn">Comment</button>
+                        {canAccept && (
+                            <button
+                                className="link-btn"
+                                onClick={onAccept}
+                                style={answer.is_accepted ? { color: 'var(--color-success, #4ade80)' } : {}}
+                            >
+                                {answer.is_accepted ? '✓ Accepted' : 'Accept'}
+                            </button>
+                        )}
                     </div>
                     <AuthorCard
                         variant="answered"
                         username={answer.author?.username ?? 'anonymous'}
-                        date={answer.created_at}
-                        aiGenerated={answer.is_ai_generated}
+                        date={new Date(answer.created_at).toLocaleDateString()}
                     />
                 </div>
-
-                {answer.comments.length > 0 && <CommentList comments={answer.comments} />}
             </div>
         </section>
-    );
-}
-
-function CommentList({ comments }: { comments: Question['comments'] }) {
-    return (
-        <ul className="comments">
-            {comments.map((c) => (
-                <li key={c.id} className="comment">
-                    <span className="comment__body">{c.body}</span>
-                    <span className="comment__meta">
-                        – <span className="comment__author">{c.author?.username ?? 'anonymous'}</span>{' '}
-                        <span className="comment__date">{c.created_at}</span>
-                    </span>
-                </li>
-            ))}
-            <li>
-                <button className="comment__add">+ Add a comment</button>
-            </li>
-        </ul>
     );
 }
 

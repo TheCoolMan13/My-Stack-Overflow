@@ -1,6 +1,48 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useAuth } from '../hooks/useAuth';
 
 function SignUp() {
+    const navigate = useNavigate();
+    const { signUp } = useAuth();
+    const [username, setUsername] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [agreed, setAgreed] = useState(false);
+    const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    async function handleSubmit(e: React.FormEvent) {
+        e.preventDefault();
+        setError('');
+
+        if (password !== confirmPassword) {
+            setError('Passwords do not match');
+            return;
+        }
+
+        if (password.length < 8) {
+            setError('Password must be at least 8 characters');
+            return;
+        }
+
+        if (!agreed) {
+            setError('You must agree to the Terms and Privacy Policy');
+            return;
+        }
+
+        setIsLoading(true);
+        const result = await signUp(username, email, password);
+        setIsLoading(false);
+
+        if (result.error) {
+            setError(result.error);
+        } else {
+            navigate('/');
+        }
+    }
+
     return (
         <div className="auth">
             <div className="auth__wrap">
@@ -14,21 +56,71 @@ function SignUp() {
                     <h1 className="auth__title">Create account</h1>
                     <p className="auth__subtitle">Join the community in under a minute</p>
 
-                    <form className="auth__form" onSubmit={(e) => e.preventDefault()}>
-                        <input className="input" type="text" autoComplete="username" placeholder="Username" />
-                        <input className="input" type="email" autoComplete="email" placeholder="Email address" />
-                        <input className="input" type="password" autoComplete="new-password" placeholder="Password" />
-                        <input className="input" type="password" autoComplete="new-password" placeholder="Confirm password" />
+                    {error && (
+                        <div style={{
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            background: 'rgba(215, 0, 21, 0.1)',
+                            border: '1px solid rgba(215, 0, 21, 0.3)',
+                            color: '#d70015',
+                            fontSize: '13px',
+                            marginBottom: '16px',
+                        }}>
+                            {error}
+                        </div>
+                    )}
+
+                    <form className="auth__form" onSubmit={handleSubmit}>
+                        <input
+                            className="input"
+                            type="text"
+                            autoComplete="username"
+                            placeholder="Username"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
+                        />
+                        <input
+                            className="input"
+                            type="email"
+                            autoComplete="email"
+                            placeholder="Email address"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                        />
+                        <input
+                            className="input"
+                            type="password"
+                            autoComplete="new-password"
+                            placeholder="Password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                        />
+                        <input
+                            className="input"
+                            type="password"
+                            autoComplete="new-password"
+                            placeholder="Confirm password"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            required
+                        />
 
                         <label className="terms">
-                            <input type="checkbox" />
+                            <input
+                                type="checkbox"
+                                checked={agreed}
+                                onChange={(e) => setAgreed(e.target.checked)}
+                            />
                             <span>
                                 I agree to the <a href="#">Terms</a> and <a href="#">Privacy Policy</a>
                             </span>
                         </label>
 
-                        <button type="submit" className="auth__submit">
-                            Create account
+                        <button type="submit" className="auth__submit" disabled={isLoading}>
+                            {isLoading ? 'Creating account…' : 'Create account'}
                         </button>
                     </form>
 
